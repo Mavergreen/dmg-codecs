@@ -1,5 +1,5 @@
 #!/bin/sh
-# platform: macOS host with the 10.9 VM at `ssh -p 2222 localhost` -- every way into the plug-in on 10.9:
+# platform: macOS-only -- a macOS host with the 10.9 VM at `ssh -p 2222 localhost`: every way into the plug-in on 10.9:
 #           user and root, convert, imageinfo, verify, over 4 GiB, encryption, and bad images
 # usage: paths.sh   (VM_SSH overrides the ssh command; needs passwordless sudo on the VM for the plug-in folder)
 set -eu

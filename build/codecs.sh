@@ -3,8 +3,8 @@
 # usage: codecs.sh fetch DIR     fetches every codec source at its pin (components/<name>/{repo,version,sha256}) into DIR/<name>
 #        codecs.sh flags         prints shell assignments DC_CODEC_CFLAGS, DC_CODEC_SRCS and DC_CODEC_LIBS for a host build,
 #                                fetching into $MAVERICKS_BUILD_ROOT/dmg-codecs-src first if needed
-# spec: lzfse and xz-embedded are compiled into libudif everywhere; zlib and bzip2 come from the system on macOS and 10.9
-#       (the plug-in links 10.9's own) and from pinned sources on Linux, whose runners need not have their headers
+# platform: 10.9 and macOS ship libz and libbz2 (the plug-in links 10.9's own); a Linux runner need not have their headers,
+#           so Linux builds them from pinned sources, while lzfse and xz-embedded are compiled in everywhere
 set -eu
 R="$(cd "$(dirname "$0")/.." && pwd)"
 . "$R/build/lib.sh"

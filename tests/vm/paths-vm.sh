@@ -1,5 +1,5 @@
 #!/bin/sh
-# platform: Mac OS X 10.9, run by tests/vm/paths.sh from its staging folder -- every way into the plug-in
+# platform: macOS-only -- runs on Mac OS X 10.9, from tests/vm/paths.sh's staging folder: every way into the plug-in
 # usage: sh paths-vm.sh   (cwd holds DMGCodecs.plugin, the fixtures and bad-*.dmg; results go to ../out)
 set -u
 W="$(cd .. && pwd)"; P=/Library/Plug-ins/DiskImages; O="$W/out"; mkdir -p "$O"
@@ -12,10 +12,9 @@ trap cleanup EXIT
 crashes() { ls "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports 2>/dev/null | grep -c -E '^(diskimages-helper|hdiutil)'; }
 devs() { hdiutil info | grep -E '^/dev/disk[0-9]+[ \t]' | sort; }
 norm() { sed -E -e 's#/dev/disk[0-9]+(s[0-9]+)?#/dev/diskN#g' -e "s#$W#W#g"; }
-# attach IMAGE MOUNTPOINT [hdiutil args...]: prints hdiutil's output then "exit N"
 attach() { i=$1; m=$2; shift 2; hdiutil attach -nobrowse -readonly -mountpoint "$m" "$@" "$i" 2>&1; echo "exit $?"; }
 
-# spec: an encrypted ULFO image behaves exactly as without the plug-in -- see it without first
+# spec: README.md "What it changes" -- an encrypted image behaves exactly as without the plug-in; see it without first
 sudo -n rm -rf "$P/DMGCodecs.plugin" || exit 1
 aes_without=$(printf dmg-codecs | attach ulfo-aes.dmg "$W/m-aes" -stdinpass | norm); cleanup
 sudo -n mkdir -p "$P" && sudo -n cp -R DMGCodecs.plugin "$P/" && sudo -n chown -R root:wheel "$P/DMGCodecs.plugin" || exit 1
@@ -38,7 +37,7 @@ if hdiutil convert -quiet ulfo.dmg -format UDZO -o "$O/ulfo-udzo.dmg" && hdiutil
 else no "convert to UDZO"; fi
 if hdiutil convert -quiet ulfo.dmg -format UDTO -o "$O/ulfo" && [ -f "$O/ulfo.cdr" ]; then ok "convert to UDTO (hash checked on the host)"
 else no "convert to UDTO"; fi
-# spec: imageinfo names the format as a modern macOS does
+# spec: README.md "What it changes" -- imageinfo names the format as a modern macOS does
 for f in "ulfo ULFO lzfse" "ulmo ULMO lzma"; do
   set -- $f
   out=$(hdiutil imageinfo $1.dmg 2>&1)

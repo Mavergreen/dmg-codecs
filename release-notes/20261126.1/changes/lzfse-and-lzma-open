@@ -1,0 +1,1 @@
+Disk images that 10.9 called corrupt because they use compression added after 10.9 now open with a double-click or hdiutil attach.

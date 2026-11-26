@@ -1,4 +1,4 @@
-# platform: macOS-only, with make-fixtures.sh -- prints "<name> <sectors> <sha256>" for a UDTO image,
+# platform: macOS-only -- runs with make-fixtures.sh; prints "<name> <sectors> <sha256>" for a UDTO image,
 #           with the sectors of every type-2 (ignore) run zeroed: Apple leaves junk there, libudif serves zeros
 import hashlib, plistlib, struct, sys
 dmg, raw, name = sys.argv[1:4]
