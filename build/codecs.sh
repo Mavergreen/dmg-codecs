@@ -1,0 +1,38 @@
+#!/bin/sh
+# platform: host-agnostic
+# usage: codecs.sh fetch DIR     fetches every codec source at its pin (components/<name>/{repo,version,sha256}) into DIR/<name>
+#        codecs.sh flags         prints shell assignments DC_CODEC_CFLAGS, DC_CODEC_SRCS and DC_CODEC_LIBS for a host build,
+#                                fetching into $MAVERICKS_BUILD_ROOT/dmg-codecs-src first if needed
+# spec: lzfse and xz-embedded are compiled into libudif everywhere; zlib and bzip2 come from the system on macOS and 10.9
+#       (the plug-in links 10.9's own) and from pinned sources on Linux, whose runners need not have their headers
+set -eu
+R="$(cd "$(dirname "$0")/.." && pwd)"
+. "$R/build/lib.sh"
+C="${DC_COMPONENTS:-$R/components}"
+fetch() {
+  mkdir -p "$1"
+  for n in lzfse xz-embedded zlib bzip2; do
+    sh "$SHIPYARD_SCRIPTS/fetch_pinned_source.sh" "$(cat "$C/$n/repo")" "$(cat "$C/$n/version")" "$(cat "$C/$n/sha256")" "$1/$n" >&2
+  done
+}
+case "${1:-}" in
+  fetch) [ $# -eq 2 ] || { echo "usage: codecs.sh fetch DIR" >&2; exit 2; }; fetch "$2" ;;
+  flags)
+    S="$MAVERICKS_BUILD_ROOT/dmg-codecs-src"
+    v="$(cat "$C"/*/version "$C"/*/sha256 | cksum | cut -d' ' -f1)"
+    [ "$(cat "$S/.pins" 2>/dev/null || :)" = "$v" ] || { fetch "$S"; echo "$v" > "$S/.pins"; }
+    L="$S/lzfse/src"; X="$S/xz-embedded"
+    cflags="-I$L -I$X/linux/include/linux -I$X/userspace -DXZ_USE_CRC64"
+    srcs="$L/lzfse_decode.c $L/lzfse_decode_base.c $L/lzfse_fse.c $L/lzvn_decode_base.c"
+    srcs="$srcs $X/linux/lib/xz/xz_crc32.c $X/linux/lib/xz/xz_crc64.c $X/linux/lib/xz/xz_dec_stream.c $X/linux/lib/xz/xz_dec_lzma2.c"
+    case "${DC_TARGET:-$(uname -s)}" in
+      Linux)
+        cflags="$cflags -I$S/zlib -I$S/bzip2"
+        for f in adler32 crc32 inflate inftrees inffast zutil uncompr; do srcs="$srcs $S/zlib/$f.c"; done
+        for f in bzlib decompress huffman crctable randtable; do srcs="$srcs $S/bzip2/$f.c"; done
+        libs="" ;;
+      *) libs="-lz -lbz2" ;;
+    esac
+    printf "DC_CODEC_CFLAGS='%s'\nDC_CODEC_SRCS='%s'\nDC_CODEC_LIBS='%s'\n" "$cflags" "$srcs" "$libs" ;;
+  *) echo "usage: codecs.sh fetch DIR | flags" >&2; exit 2 ;;
+esac

@@ -13,14 +13,21 @@ case "$(uname -s)" in
   *) CC="$CL/bin/clang -fsanitize=address,undefined -fno-sanitize-recover=undefined" ;;
 esac
 SRCS="$(ls "$R"/src/*.c 2>/dev/null || :)"
-CODEC_CFLAGS="${DC_CODEC_CFLAGS:-}"; CODEC_SRCS="${DC_CODEC_SRCS:-}"; CODEC_LIBS="${DC_CODEC_LIBS:-}"
-[ -n "$CODEC_SRCS$CODEC_CFLAGS" ] || eval "$(sh "$R/build/codecs.sh" flags 2>/dev/null || :)"
+eval "$(sh "$R/build/codecs.sh" flags)"
+# spec: upstream codec sources build without our warning flags; libudif's own code builds with -Werror
+mkdir -p "$B/codecs"; objs=""
+for s in $DC_CODEC_SRCS; do
+  o="$B/codecs/$(basename "$s" .c).o"
+  # shellcheck disable=SC2086
+  $CC -std=gnu11 -O1 -g -w $DC_CODEC_CFLAGS -c "$s" -o "$o" || { echo "FAIL: $s did not build" >&2; exit 1; }
+  objs="$objs $o"
+done
 tests="$*"; [ -n "$tests" ] || tests="$(cd "$R/tests/c" && ls test_*.c | sed 's/\.c$//')"
 fail=0
 for t in $tests; do
   # shellcheck disable=SC2086
   if $CC -std=c11 -D_DEFAULT_SOURCE -D_DARWIN_C_SOURCE -g -O1 -Wall -Wextra -Werror -Wno-unused-parameter -Wno-unused-function \
-       -I"$R/src" $CODEC_CFLAGS "$R/tests/c/$t.c" $SRCS $CODEC_SRCS $CODEC_LIBS -lz -lbz2 -lpthread -o "$B/$t" 2> "$B/$t.build.log"; then
+       -I"$R/src" $DC_CODEC_CFLAGS "$R/tests/c/$t.c" $SRCS $objs $DC_CODEC_LIBS -lpthread -o "$B/$t" 2> "$B/$t.build.log"; then
     "$B/$t" "$R/tests/fixtures" || fail=1
   else
     cat "$B/$t.build.log" >&2; echo "FAIL: $t did not build" >&2; fail=1
