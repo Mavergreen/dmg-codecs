@@ -1,25 +1,33 @@
 #!/bin/sh
 # platform: host-agnostic -- builds each tests/c/test_*.c against libudif's sources with the host's clang22 and runs it
 # usage: run.sh [TEST...]   (default: every test); BUILD_DIR defaults to $MAVERICKS_BUILD_ROOT/dmg-codecs-tests
+#        DC_SANITIZE=1 (a Mac only) builds them with ASan and UBSan
 set -eu
 R="$(cd "$(dirname "$0")/../.." && pwd)"
+MAVERICKS_ROOT="$R"; export MAVERICKS_ROOT
 . "$R/build/lib.sh"
 B="${BUILD_DIR:-$MAVERICKS_BUILD_ROOT/dmg-codecs-tests}"; mkdir -p "$B"
 CL="$(sh "$SHIPYARD_SCRIPTS/fetch_clang22.sh" "$R/components/clang22" 2>/dev/null)"
-case "$(uname -s)" in
-  # platform: clang22-cross targets 10.9 by default; tests run natively on the Mac's own arch (no Rosetta),
-  #           and its arm64 runtime has no sanitizers. The test binaries never ship.
-  Darwin) set -- "$@"; CC="$CL/bin/clang --no-default-config --target=arm64-apple-macos11 -isysroot $(sh "$SHIPYARD_SCRIPTS/fetch_sdk.sh" --arch arm64) -fuse-ld=lld" ;;
-  *) CC="$CL/bin/clang -fsanitize=address,undefined -fno-sanitize-recover=undefined" ;;
+CODEC_SAN=""
+case "$(uname -s):${DC_SANITIZE:-0}" in
+  # platform: clang22-cross targets 10.9 by default; tests run natively on the Mac's own arch (no Rosetta).
+  #           The test binaries never ship.
+  Darwin:0) CC="$CL/bin/clang --no-default-config --target=arm64-apple-macos11 -isysroot $(sh "$SHIPYARD_SCRIPTS/fetch_sdk.sh" --arch arm64) -fuse-ld=lld" ;;
+  # platform: clang22 ships no sanitizer runtimes on any host, so DC_SANITIZE=1 takes Apple's clang (INGREDIENTS.md
+  #           "Conformance deviations"); upstream lzfse's pointer arithmetic trips UBSan's pointer-overflow check
+  Darwin:1) CC="/usr/bin/clang -fsanitize=address,undefined -fno-sanitize-recover=undefined"; CODEC_SAN="-fno-sanitize=pointer-overflow" ;;
+  # platform: clang22's clang.cfg targets Darwin and its Linux archive carries no Linux compiler-rt, so a Linux test
+  #           build sets its own target and links the system's libgcc (and its crt and libc) with lld
+  *:0) CC="$CL/bin/clang --no-default-config --target=x86_64-linux-gnu -fuse-ld=lld --rtlib=libgcc --unwindlib=libgcc" ;;
+  *) echo "run.sh: DC_SANITIZE=1 needs a Mac: clang22 ships no sanitizer runtimes" >&2; exit 2 ;;
 esac
 SRCS="$(ls "$R"/src/*.c 2>/dev/null || :)"
 eval "$(sh "$R/build/codecs.sh" flags)"
-# spec: upstream codec sources build without our warning flags; libudif's own code builds with -Werror
 mkdir -p "$B/codecs"; objs=""
 for s in $DC_CODEC_SRCS; do
-  o="$B/codecs/$(basename "$s" .c).o"
+  o="$B/codecs/$(basename "$(dirname "$s")")-$(basename "$s" .c).o"  # zlib and bzip2 both have compress.c
   # shellcheck disable=SC2086
-  $CC -std=gnu11 -O1 -g -w $DC_CODEC_CFLAGS -c "$s" -o "$o" || { echo "FAIL: $s did not build" >&2; exit 1; }
+  $CC $CODEC_SAN -std=gnu11 -O1 -g -w $DC_CODEC_CFLAGS -c "$s" -o "$o" || { echo "FAIL: $s did not build" >&2; exit 1; }
   objs="$objs $o"
 done
 tests="$*"; [ -n "$tests" ] || tests="$(cd "$R/tests/c" && ls test_*.c | sed 's/\.c$//')"

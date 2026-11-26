@@ -1,11 +1,11 @@
 #!/bin/sh
-# dmg-codecs VM kit: what only a person's 10.9 session shows -- double-click, APFS inside, stress, uninstall.
-# platform: Mac OS X 10.9 with a console user logged in and passwordless sudo for this run; staged by stage.sh
-# Usage: sh run.sh STEP...   as the console user (root re-runs it as that user); steps run in the order given.
+# platform: macOS-only -- Mac OS X 10.9 with a console user logged in and passwordless sudo for this run; staged by stage.sh
+# usage: sh run.sh STEP...   as the console user (root re-runs it as that user); steps run in the order given.
+#        what only a person's 10.9 session shows -- double-click, APFS inside, stress, uninstall
 #   1 preflight (read only)    2 install (pkg/*.pkg if staged, else the bare plug-in) + the Accessibility grant
 #   3 double-click             4 apfs            5 stress            6 uninstall
 #   8 clean up                 9 report (OUT as /var/tmp/dc-kit-out.tar.gz)
-# Knobs: KIT_WAIT (s to wait for a mount, default 120).
+#   knobs: KIT_WAIT (s to wait for a mount, default 120).
 KIT=$(cd "$(dirname "$0")" && pwd)
 OUT=/var/tmp/dc-kit-out; WK=/var/tmp/dc-kit-work; P=/Library/Plug-ins/DiskImages/DMGCodecs.plugin
 WAIT=${KIT_WAIT:-120}
@@ -19,7 +19,7 @@ mkdir -p "$OUT" "$WK"
 ts() { date '+%Y-%m-%d %H:%M:%S'; }
 say() { echo "$(ts) $*" | tee -a "$OUT/progress.log"; }
 verdict() { echo "$S: $*" >> "$OUT/verdicts.txt"; say "VERDICT $S: $*"; }
-# wd SECONDS CMD...: CMD with a watchdog (10.9 has no timeout(1)); 124 when killed
+# platform: 10.9 has no timeout(1), so wd SECONDS CMD... runs CMD under a watchdog; 124 when killed
 wd() {
   wt=$1; shift; "$@" & wp=$!
   ( k=0; while test $k -lt "$wt"; do sleep 1; k=$((k + 1)); done; kill -9 "$wp" 2> /dev/null ) < /dev/null > /dev/null 2>&1 & ww=$!
@@ -27,11 +27,9 @@ wd() {
   test $wrc -ne 137 || wrc=124; return $wrc
 }
 lw_pid() { ps -axo pid=,user=,command= | awk -v u="$(console_user)" '$2 == u && $3 ~ /loginwindow$/ { print $1; exit }'; }
-# aqua CMD...: in the console user's Aqua session
 aqua() { sudo -n launchctl bsexec "$(lw_pid)" sudo -n -u "$(console_user)" "$@"; }
 shot() { mkdir -p "$OUT/shots"; wd 60 aqua screencapture -x -t jpg "$OUT/shots/$1.jpg" > /dev/null 2>&1 || say "screenshot $1 failed"; }
 osa() { n=$#; while test $n -gt 0; do set -- "$@" -e "$1"; shift; n=$((n - 1)); done; wd 60 aqua osascript "$@" 2>&1 < /dev/null; }
-# dialogs PROCESS: every window's buttons and texts; click PROCESS PREFIX: the first button starting with PREFIX
 dialogs() {
   osa "tell application \"System Events\" to tell process \"$1\"" 'set r to ""' 'repeat with w in windows' \
     'set r to r & "buttons: "' 'repeat with b in buttons of w' 'set r to r & (name of b as text) & "; "' 'end repeat' \
@@ -62,16 +60,13 @@ tcc_revoke() {
   rm -f "$OUT/tcc-added"
 }
 crashes() { ls "$HOME/Library/Logs/DiagnosticReports" /Library/Logs/DiagnosticReports 2> /dev/null | grep -c -E '^(diskimages-helper|hdiutil|DiskImageMounter)'; }
-# ours: whole disks attached from this kit's images
 ours() { hdiutil info | awk -v k="$KIT" -v w="$WK" '/^image-path/ { p = index($0, k) || index($0, w) } p && /^\/dev\/disk[0-9]+[ \t]/ { print $1 }'; }
 detach_all() { for d in $(ours); do wd 120 hdiutil detach -force "$d" > /dev/null 2>&1; done; }
-# mounted_from DISK: the first mount point of DISK's slices
 mounted_from() { mount | awk -v d="$1" 'index($1, d "s") == 1 { sub(/^[^ ]+ on /, ""); sub(/ \([^)]*\)$/, ""); print; exit }'; }
 wait_mount() { k=0; while test $k -lt "$WAIT"; do m=$(mounted_from "$1"); test -z "$m" || { echo "$m"; return 0; }; sleep 2; k=$((k + 2)); done; return 1; }
-# mp_of_attach: the mount point hdiutil printed (a FUSE mount does not name /dev/diskNsM as its source)
+# platform: a FUSE mount does not name /dev/diskNsM as its source, so take the mount point hdiutil printed
 mp_of_attach() { awk -F'\t' '/^\/dev\/disk/ && $NF ~ /^\// { print $NF; exit }' "$OUT/attach.tmp"; }
 wait_mp() { k=0; while test $k -lt "$WAIT"; do mount | grep -qF " on $1 (" && return 0; sleep 2; k=$((k + 2)); done; return 1; }
-# attach IMG: hdiutil attach (DiskArbitration mounts as it would), prints the whole disk; log in $OUT/$S.log
 attach() { wd 300 hdiutil attach -readonly "$@" > "$OUT/attach.tmp" 2>&1; r=$?; cat "$OUT/attach.tmp" >> "$OUT/$S.log"; awk '/^\/dev\/disk[0-9]+[ \t]/ { print $1; exit }' "$OUT/attach.tmp"; return $r; }
 installed() { test -d "$P"; }
 linuxfs() { test -d /usr/local/mavergreen/linuxfs; }
@@ -116,7 +111,7 @@ doubleclick() {
 apfs() {
   S=apfs
   if linuxfs; then
-    # spec: the release gate -- with linuxfs, an LZFSE and an xz image with APFS inside mount read-only and eject cleanly
+    # spec: tests/vm/kit/README.md step 4 -- the release gate: with linuxfs, an LZFSE and an xz image with APFS inside mount read-only and eject cleanly
     for n in ulfo ulmo; do
       d=$(attach "$KIT/apfs-$n.dmg"); m=$(mp_of_attach); test -z "$m" || wait_mp "$m" || m=
       if test -n "$m" && grep -q "line 2999 of an APFS fixture" "$m/text.txt" && mount | grep -F " on $m (" | grep -q read-only; then
@@ -125,7 +120,7 @@ apfs() {
       else verdict "FAIL: apfs-$n: disk '$d' mount '$m' ($(mount | grep -F " on $m (" ))"; detach_all; fi
     done
   else
-    # spec: without linuxfs, the plug-in's APFS images fail no worse than stock 10.9 does with a zlib one
+    # spec: tests/vm/kit/README.md step 4 -- without linuxfs, the plug-in's APFS images fail no worse than stock 10.9 does with a zlib one
     for n in udzo ulfo ulmo; do
       attach "$KIT/apfs-$n.dmg" > /dev/null; r=$?; sleep 10
       eval "r_$n=\"exit $r, $(tail -n 3 "$OUT/attach.tmp" | sed -E 's#/dev/disk[0-9]+(s[0-9]+)?#/dev/diskN#g' | tr '\n\t' '  ')\""
@@ -141,13 +136,13 @@ stress() {
   if grep -q "line 2999" "$WK/m-ulfo/text.txt" && grep -q "line 2999" "$WK/m-ulmo/text.txt"; then verdict "two images attached at once ($a, $b), both read"
   else verdict "FAIL: two at once: '$a' '$b'"; fi
   detach_all
-  # spec: Review Focus 5 -- a Finder copy of a large file while the volume is ejected
+  # spec: tests/vm/kit/README.md -- a copy interrupted by an eject
   d=$(attach "$KIT/stress.dmg"); m=; test -z "$d" || m=$(wait_mount "$d")
   test -n "$m" || { verdict "FAIL: stress image did not mount ($d)"; detach_all; return; }
   rm -rf "$WK/copy"; mkdir -p "$WK/copy"
   osa "tell application \"Finder\" to duplicate (POSIX file \"$m/large.bin\" as alias) to (POSIX file \"$WK/copy\" as alias)" > "$OUT/stress-copy.osa" &
   cp_pid=$!
-  # spec: the eject lands mid-copy: as soon as the copy has written something, well before its 2 GiB
+  # spec: tests/vm/kit/README.md -- the eject lands mid-copy: as soon as the copy has written something, well before its 2 GiB
   k=0; while test $k -lt 120 && test "$(stat -f %z "$WK/copy/large.bin" 2> /dev/null || echo 0)" -lt 1048576; do sleep 1; k=$((k + 1)); done
   sz=$(stat -f %z "$WK/copy/large.bin" 2> /dev/null || echo 0); shot stress-copying
   wd 120 hdiutil detach "$d" > "$OUT/stress-eject.log" 2>&1; r=$?

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>Mavergreen/shipyard"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "The clang22 pin: a Mavergreen/clang-22 release tag; it compiles and links the plug-in and its updater.",
+      "managerFilePatterns": ["/^components/clang22/version$/"],
+      "matchStrings": ["^(?<currentValue>\\S+)\\s*$"],
+      "depNameTemplate": "Mavergreen/clang-22",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-mavericks\\.(?<build>\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "The lzfse pin: a commit on lzfse/lzfse's master, compiled into the plug-in.",
+      "managerFilePatterns": ["/^components/lzfse/version$/"],
+      "matchStrings": ["^(?<currentDigest>[0-9a-f]{40})\\s*$"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "lzfse",
+      "packageNameTemplate": "https://github.com/lzfse/lzfse",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "The xz-embedded pin: a commit on tukaani-project/xz-embedded's master, compiled into the plug-in.",
+      "managerFilePatterns": ["/^components/xz-embedded/version$/"],
+      "matchStrings": ["^(?<currentDigest>[0-9a-f]{40})\\s*$"],
+      "currentValueTemplate": "master",
+      "depNameTemplate": "xz-embedded",
+      "packageNameTemplate": "https://github.com/tukaani-project/xz-embedded",
+      "datasourceTemplate": "git-refs"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Renovate moves components/clang22/version but cannot write the Linux archive's digest beside it, so the build fails at the fetch until components/clang22/linux-sha256 names the new release's archive.",
+      "matchDepNames": ["Mavergreen/clang-22"],
+      "prBodyNotes": ["Before this can merge, replace components/clang22/linux-sha256 with the `linux-x86_64.tar.gz` line of the new release's SHA256SUMS: `gh release download <tag> -R Mavergreen/clang-22 -p SHA256SUMS -O - | grep linux-x86_64.tar.gz > components/clang22/linux-sha256`."]
+    },
+    {
+      "description": "Renovate moves a codec's commit but cannot write the SHA-256 of GitHub's tarball of it, so the build fails at the fetch until components/<codec>/sha256 holds it.",
+      "matchDepNames": ["lzfse", "xz-embedded"],
+      "prBodyNotes": ["Before this can merge, write the SHA-256 of GitHub's tarball of the new commit to components/{{depName}}/sha256: `curl -sL {{packageName}}/archive/<commit>.tar.gz | shasum -a 256 | cut -d' ' -f1`. The fetch prints the SHA-256 it got when it refuses, so the failing build names it too."]
+    }
+  ]
+}

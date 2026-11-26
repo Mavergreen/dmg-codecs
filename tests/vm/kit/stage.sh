@@ -1,11 +1,11 @@
 #!/bin/sh
-# platform: macOS host with the 10.9 VM at `ssh -p 2222 localhost` -- stages the VM kit and fetches its results
+# platform: macOS-only -- a macOS host with the 10.9 VM at `ssh -p 2222 localhost`: stages the VM kit and fetches its results
 # usage: stage.sh [PKG]   builds the plug-in, copies run.sh, the fixtures, a stress image and (if given) the product's
 #                         .pkg to the VM's /var/tmp/dc-kit; then on the VM: sh /var/tmp/dc-kit/run.sh STEP...
 #        stage.sh fetch   copies /var/tmp/dc-kit-out.tar.gz back into .superpowers/kits/dmg-codecs-results/
-# The VM never writes to the shared tree: this script, on the host, does the copying both ways.
 set -eu
 R="$(cd "$(dirname "$0")/../../.." && pwd)"
+MAVERICKS_ROOT="$R"; export MAVERICKS_ROOT
 . "$R/build/lib.sh"
 VM_SSH="${VM_SSH:-ssh -p 2222 localhost}"
 if [ "${1:-}" = fetch ]; then
@@ -21,7 +21,7 @@ K="$T/dc-kit"; mkdir -p "$K/src"
 cp "$R/tests/vm/kit/run.sh" "$R/tests/vm/kit/README.md" "$K/"; cp -R "$B/DMGCodecs.plugin" "$K/"
 cp "$R"/tests/fixtures/ulfo.dmg "$R"/tests/fixtures/ulmo.dmg "$R"/tests/fixtures/apfs-*.dmg "$K/"
 if [ -n "${1:-}" ]; then mkdir -p "$K/pkg"; cp "$1" "$K/pkg/"; fi
-# spec: stress copies a large file while ejecting; 2 GiB that compresses well, so the dmg stays small
+# spec: tests/vm/kit/README.md -- a copy interrupted by an eject needs a large file: 2 GiB that compresses well, so the dmg stays small
 yes 'a line of the stress image, decoded again and again' | head -c 2147483648 > "$K/src/large.bin"
 hdiutil create -quiet -ov -fs HFS+ -size 3g -volname "DC stress" -srcfolder "$K/src" -format ULFO "$K/stress.dmg"
 rm -rf "$K/src"

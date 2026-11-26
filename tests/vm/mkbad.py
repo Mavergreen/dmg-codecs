@@ -1,4 +1,4 @@
-# platform: macOS host, for tests/vm/paths.sh -- writes the bad images the plug-in must decline or fail cleanly on,
+# platform: host-agnostic -- for tests/vm/paths.sh: writes the bad images the plug-in must decline or fail cleanly on,
 #           derived from good fixtures: the Task 2 malformations as files, plus chunks the decoders reject
 # usage: python3 -I mkbad.py FIXTURES_DIR OUT_DIR
 import os, plistlib, struct, sys

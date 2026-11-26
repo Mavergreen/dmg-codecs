@@ -1,8 +1,9 @@
 #!/bin/sh
-# platform: macOS host with the 10.9 VM at `ssh -p 2222 localhost` -- runs libudif's unit tests ON 10.9
+# platform: macOS-only -- a macOS host with the 10.9 VM at `ssh -p 2222 localhost`: runs libudif's unit tests ON 10.9
 # usage: unit.sh   (VM_SSH overrides the ssh command; the VM stages on its own disk, never the share)
 set -eu
 R="$(cd "$(dirname "$0")/../.." && pwd)"
+MAVERICKS_ROOT="$R"; export MAVERICKS_ROOT
 . "$R/build/lib.sh"
 B="${BUILD_DIR:-$MAVERICKS_BUILD_ROOT/dmg-codecs-109}"
 VM_SSH="${VM_SSH:-ssh -p 2222 localhost}"

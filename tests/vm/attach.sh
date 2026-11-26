@@ -1,9 +1,10 @@
 #!/bin/sh
-# platform: macOS host with the 10.9 VM at `ssh -p 2222 localhost` -- the plug-in attaches LZFSE and xz images on 10.9
+# platform: macOS-only -- a macOS host with the 10.9 VM at `ssh -p 2222 localhost`: the plug-in attaches LZFSE and xz images on 10.9
 # usage: attach.sh   (VM_SSH overrides the ssh command; needs passwordless sudo on the VM for the plug-in folder)
-# The plug-in is installed into /Library/Plug-ins/DiskImages for the run and removed after, whatever happens.
+#        The plug-in is installed into /Library/Plug-ins/DiskImages for the run and removed after, whatever happens.
 set -eu
 R="$(cd "$(dirname "$0")/../.." && pwd)"
+MAVERICKS_ROOT="$R"; export MAVERICKS_ROOT
 . "$R/build/lib.sh"
 B="${BUILD_DIR:-$MAVERICKS_BUILD_ROOT/dmg-codecs-109}"
 VM_SSH="${VM_SSH:-ssh -p 2222 localhost}"

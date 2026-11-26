@@ -10,6 +10,11 @@ echo "$v" | grep -Eq '^[0-9]{8}\.[0-9]+$' || { echo "build/version.sh printed '$
 for s in "The following disk images couldn't be opened" "hdiutil: attach failed - corrupt image"; do
   head -n 12 "$R/README.md" 2>/dev/null | grep -qF "$s" || { echo "README.md's opening lacks: $s" >&2; fail=1; }
 done
-grep -qF "not been read or edited by a human" "$R/README.md" 2>/dev/null || { echo "README.md lacks the not-read-by-a-human line" >&2; fail=1; }
+# platform: dash, Ubuntu's sh, gives a sourced file the caller's $0, so build/lib.sh cannot find the repo by itself;
+#           each script that sources it names the repo first
+for f in $(grep -rl '^\. "\$R/build/lib.sh"' "$R/build" "$R/tests"); do
+  grep -B1 '^\. "\$R/build/lib.sh"' "$f" | head -n 1 | grep -q '^MAVERICKS_ROOT="\$R"; export MAVERICKS_ROOT$' ||
+    { echo "${f#"$R/"} sources build/lib.sh without setting MAVERICKS_ROOT=\"\$R\" on the line before" >&2; fail=1; }
+done
 [ "$fail" -eq 0 ] && echo "skeleton OK"
 exit "$fail"

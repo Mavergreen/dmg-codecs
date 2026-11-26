@@ -6,6 +6,7 @@
 #        plugin BUILD_DIR/DMGCodecs.plugin (DC_TRACE=1: every slot call logged to syslog)
 set -eu
 R="$(cd "$(dirname "$0")/.." && pwd)"
+MAVERICKS_ROOT="$R"; export MAVERICKS_ROOT
 . "$R/build/lib.sh"
 B="${BUILD_DIR:-$MAVERICKS_BUILD_ROOT/dmg-codecs-109}"; mkdir -p "$B/obj" "$B/tests"
 CL="$(sh "$SHIPYARD_SCRIPTS/fetch_clang22.sh" "$R/components/clang22" 2>/dev/null)"
@@ -17,7 +18,6 @@ lib() {
   objs=""
   for s in $DC_CODEC_SRCS; do
     o="$B/obj/$(basename "$s" .c).o"
-    # spec: upstream codec sources build without our warning flags
     # shellcheck disable=SC2086
     $CC -std=gnu11 -O2 -g -w $DC_CODEC_CFLAGS -c "$s" -o "$o"; objs="$objs $o"
   done
@@ -38,7 +38,7 @@ tests() {
       -I"$R/src" $DC_CODEC_CFLAGS "$t" "$B/libudif.a" -lz -lbz2 -o "$B/tests/$(basename "$t" .c)"
   done
 }
-# spec: the factory UUID is the plug-in's identity to CFPlugIn; it never changes
+# platform: CFPlugIn knows a factory by its UUID, so a new one would make 10.9 see a different plug-in
 FACTORY=743AFD46-8527-479D-B299-1A28AFB3147B
 plugin() {
   lib
@@ -48,6 +48,9 @@ plugin() {
   $CC -std=c11 -D_DARWIN_C_SOURCE -O2 -g -Wall -Wextra -Werror -Wno-unused-parameter -fvisibility=hidden -fuse-ld=lld -bundle -Wl,-exported_symbol,_DMGCodecsFactory \
     $trace -DDC_FACTORY_UUID="\"$FACTORY\"" -I"$R/src" "$R/src/plugin/plugin.c" "$B/libudif.a" \
     -framework CoreFoundation -lz -lbz2 -o "$P/MacOS/DMGCodecs"
+  # platform: clang runs dsymutil when one -g invocation compiles and links, writing the dSYM beside the binary;
+  #           it stays in BUILD_DIR for debugging and out of the bundle
+  rm -rf "$B/DMGCodecs.dSYM"; if [ -d "$P/MacOS/DMGCodecs.dSYM" ]; then mv "$P/MacOS/DMGCodecs.dSYM" "$B/"; fi
   v="$(sh "$R/build/version.sh" 2>/dev/null || echo 0)"
   sed -e "s/@VERSION@/$v/g" -e "s/@FACTORY@/$FACTORY/g" "$R/src/plugin/Info.plist.in" > "$P/Info.plist"
 }
