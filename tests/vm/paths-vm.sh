@@ -14,7 +14,6 @@ devs() { hdiutil info | grep -E '^/dev/disk[0-9]+[ \t]' | sort; }
 norm() { sed -E -e 's#/dev/disk[0-9]+(s[0-9]+)?#/dev/diskN#g' -e "s#$W#W#g"; }
 attach() { i=$1; m=$2; shift 2; hdiutil attach -nobrowse -readonly -mountpoint "$m" "$@" "$i" 2>&1; echo "exit $?"; }
 
-# spec: README.md "What it changes" -- an encrypted image behaves exactly as without the plug-in; see it without first
 sudo -n rm -rf "$P/DMGCodecs.plugin" || exit 1
 aes_without=$(printf dmg-codecs | attach ulfo-aes.dmg "$W/m-aes" -stdinpass | norm); cleanup
 sudo -n mkdir -p "$P" && sudo -n cp -R DMGCodecs.plugin "$P/" && sudo -n chown -R root:wheel "$P/DMGCodecs.plugin" || exit 1
@@ -37,7 +36,6 @@ if hdiutil convert -quiet ulfo.dmg -format UDZO -o "$O/ulfo-udzo.dmg" && hdiutil
 else no "convert to UDZO"; fi
 if hdiutil convert -quiet ulfo.dmg -format UDTO -o "$O/ulfo" && [ -f "$O/ulfo.cdr" ]; then ok "convert to UDTO (hash checked on the host)"
 else no "convert to UDTO"; fi
-# spec: README.md "What it changes" -- imageinfo names the format as a modern macOS does
 for f in "ulfo ULFO lzfse" "ulmo ULMO lzma"; do
   set -- $f
   out=$(hdiutil imageinfo $1.dmg 2>&1)
@@ -52,7 +50,6 @@ if [ $? -eq 0 ] && grep -q "line 2999 of a fixture" "$W/m-huge/text.txt"; then o
 hdiutil detach -quiet "$W/m-huge" 2>/dev/null
 
 helper_pids() { ps -axo pid=,command= | awk '/diskimages-helper/ && !/awk/ {print $1}' | sort; }
-# spec: README.md "What it changes" -- a damaged image fails with an error: a read error mid-copy is an error, not a hang or a crash
 out=$(hdiutil attach -noverify -nobrowse -readonly -mountpoint "$W/m-data" bad-huge-data.dmg 2>&1)
 if [ $? -ne 0 ]; then no "bad-huge-data.dmg did not attach with -noverify: $out"
 else
@@ -64,7 +61,6 @@ else
   hdiutil detach -quiet "$W/m-data" && ok "it still detaches" || no "it would not detach after a read error"
 fi
 [ "$(crashes)" = "$base_crashes" ] || { no "a read error mid-copy crashed hdiutil or the helper"; base_crashes=$(crashes); }
-# spec: README.md "What it changes" -- an eject during a large copy ends the copy with an error and leaves nothing attached
 out=$(hdiutil attach -nobrowse -readonly -mountpoint "$W/m-large" large.dmg 2>&1)
 if [ $? -ne 0 ]; then no "large.dmg did not attach: $out"
 else

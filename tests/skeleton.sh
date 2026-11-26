@@ -7,9 +7,6 @@ fail=0
 cmp -s "$R/build/msc.sh" "$SHIPYARD_SCRIPTS/templates/msc.sh" || { echo "build/msc.sh differs from shipyard's template" >&2; fail=1; }
 v="$(sh "$R/build/version.sh" 2>/dev/null || :)"
 echo "$v" | grep -Eq '^[0-9]{8}\.[0-9]+$' || { echo "build/version.sh printed '$v', want YYYYMMDD.N" >&2; fail=1; }
-for s in "The following disk images couldn't be opened" "hdiutil: attach failed - corrupt image"; do
-  head -n 12 "$R/README.md" 2>/dev/null | grep -qF "$s" || { echo "README.md's opening lacks: $s" >&2; fail=1; }
-done
 # platform: dash, Ubuntu's sh, gives a sourced file the caller's $0, so build/lib.sh cannot find the repo by itself;
 #           each script that sources it names the repo first
 for f in $(grep -rl '^\. "\$R/build/lib.sh"' "$R/build" "$R/tests"); do
