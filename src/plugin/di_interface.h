@@ -15,6 +15,7 @@
 
 typedef struct CBackingStore CBackingStore;      /* the framework's C++ object; reached only through DIBackingStore* */
 typedef struct CCFPlugInDiskImage CCFPlugInDiskImage;
+typedef struct CChecksum CChecksum;              /* the framework's C++ checksum; reached only through DIChecksum* */
 
 typedef struct DIPlugInInterface {
   IUNKNOWN_C_GUTS;                                                                  /* 0x00 .. 0x18 */
@@ -35,19 +36,30 @@ typedef struct DIPlugInInterface {
   void *getImageFormat;                                                             /* 0x90 */
   void *getSectorCount32;                                                           /* 0x98: unused when 0xd0 is set */
   void *reservedA0;                                                                 /* 0xa0 */
-  void *hasValidChecksum, *copyImageChecksum, *calcChecksum, *createUniqueIDDict;  /* 0xa8 .. 0xc0 */
+  void *hasValidChecksum;                                                           /* 0xa8 */
+  /* 0xb0: the image's stored checksum, +1, or NULL for none; `hdiutil verify` and imageinfo ask this first */
+  CChecksum *(*copyImageChecksum)(void *self);
+  /* 0xb8: sets c (a new checksum of the stored one's kind) to the value recalculated from the image; 0 or errno.
+   *       With 0x100 NULL, CDiskImage::validateChecksum compares the two and owns both objects. */
+  int (*calcChecksum)(void *self, CChecksum *c);
+  void *createUniqueIDDict;                                                         /* 0xc0 */
   int (*isWriteEnabled)(void *self);                                                /* 0xc8 */
   int64_t (*getSectorCount)(void *self);                                            /* 0xd0 */
   int (*readSectors)(void *self, int64_t start, int64_t count, int64_t *done, void *buf);  /* 0xd8: 512-byte sectors */
   void *writeSectors;                                                               /* 0xe0 */
   void *handlePowerChange;                                                          /* 0xe8 */
-  void *setSectorCount, *maxSectorCount, *validateChecksum;                         /* 0xf0 .. 0x100 */
+  void *setSectorCount, *maxSectorCount;                                            /* 0xf0, 0xf8 */
+  void *validateChecksum;                                                           /* 0x100 */
   int (*flush)(void *self, unsigned int how);                                       /* 0x108: 0, then CDiskImage's own */
 } DIPlugInInterface;
 
 /* platform: exported by DiskImages.framework (hdiutil imports them); found with dlsym in the host process, since the
  *           10.9 SDK has no private frameworks to link against */
 typedef int (*DIBackingStoreGetDataForkLength_fn)(CBackingStore *, long long *);
+/* platform: checksum type 2 is CRC32 (CChecksum::newWith); setValue takes the value as big-endian bytes */
+#define DI_CHECKSUM_CRC32 2
+typedef CChecksum *(*DIChecksumNewWith_fn)(unsigned int type);
+typedef void (*DIChecksumSetValue_fn)(CChecksum *, const void *value);
 typedef CBackingStore *(*DIBackingStoreGetBaseBackingStore_fn)(CBackingStore *);
 /* platform: a store must be opened before it is read (else EBADF); CUDIFEncoding::isUDIFFile opens, reads and closes */
 typedef int (*DIBackingStoreOpenDataFork_fn)(CBackingStore *);

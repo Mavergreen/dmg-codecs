@@ -24,6 +24,7 @@ typedef struct {
   CFUUIDRef factory;
   udif_image *img;
   CBackingStore *open_store;  /* the file, held open while this instance is an image */
+  int xz;                     /* any chunk is xz */
 } instance;
 
 static DIBackingStoreGetDataForkLength_fn get_length;
@@ -101,16 +102,22 @@ static int new_with_backing_store(void *self, CBackingStore *store, CFDictionary
   if (!e) {
     e = udif_image_open(&r, &in->img);
     if (e) close_fork((CBackingStore *)r.ctx); else in->open_store = r.ctx;
+    if (!e) in->xz = udif_image_has_type(in->img, 0x80000008);
   }
   TRACE("newWithBackingStore: store %p, wrapper %p, error %d, %llu sectors", (void *)store, (void *)wrapper, e,
         in->img ? (unsigned long long)(udif_image_size(in->img) / 512) : 0ULL);
   return e ? (e == -ENOMEM ? ENOMEM : EINVAL) : 0;
 }
 static const char *class_name(void *self) { return "CDMGCodecsDiskImage"; }
-static CFStringRef copy_format_description(void *self) { return CFSTR("UDIF read-only (LZFSE or xz, through DMG Codecs)"); }
+/* spec: named as a modern macOS names them: ULMO if any chunk is xz, else ULFO */
+static int is_ulmo(const instance *in) { return in->xz; }
+static CFStringRef copy_format_description(void *self) {
+  return is_ulmo(self) ? CFSTR("UDIF read-only compressed (lzma)") : CFSTR("UDIF read-only compressed (lzfse)");
+}
 static CFDictionaryRef copy_image_information(void *self) {
-  const void *k[] = { CFSTR("DMG Codecs") }, *v[] = { kCFBooleanTrue };
-  return CFDictionaryCreate(NULL, k, v, 1, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+  const void *k[] = { CFSTR("Format"), CFSTR("Format Description") };
+  const void *v[] = { is_ulmo(self) ? CFSTR("ULMO") : CFSTR("ULFO"), copy_format_description(self) };
+  return CFDictionaryCreate(NULL, k, v, 2, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 }
 static int is_write_enabled(void *self) { return 0; }
 static int64_t sector_count(void *self) {
@@ -128,6 +135,34 @@ static int read_sectors(void *self, int64_t start, int64_t count, int64_t *done,
   return 0;
 }
 static int flush(void *self, unsigned int how) { return 0; }
+static DIChecksumNewWith_fn checksum_new;
+static DIChecksumSetValue_fn checksum_set;
+static int resolve_checksum(void) {
+  if (!checksum_new) checksum_new = (DIChecksumNewWith_fn)dlsym(RTLD_DEFAULT, "DIChecksumNewWith");
+  if (!checksum_set) checksum_set = (DIChecksumSetValue_fn)dlsym(RTLD_DEFAULT, "DIChecksumSetValue");
+  return checksum_new && checksum_set ? 0 : -ENOSYS;
+}
+static void set_crc(CChecksum *c, uint32_t v) {
+  uint8_t be[4] = { v >> 24, v >> 16, v >> 8, v };
+  checksum_set(c, be);
+}
+static CChecksum *copy_image_checksum(void *self) {
+  instance *in = self; uint32_t stored = 0;
+  if (!in->img || resolve_checksum() || udif_image_stored_crc32(in->img, &stored)) return NULL;
+  CChecksum *c = checksum_new(DI_CHECKSUM_CRC32);
+  if (c) set_crc(c, stored);
+  TRACE("copyImageChecksum: %p, $%08X", (void *)c, stored);
+  return c;
+}
+static int calc_checksum(void *self, CChecksum *c) {
+  instance *in = self; uint32_t stored = 0, calculated = 0;
+  if (!in->img || !c || resolve_checksum()) return EINVAL;
+  int e = udif_image_crc32(in->img, &stored, &calculated);
+  TRACE("calcChecksum: %d, $%08X (stored $%08X)", e, calculated, stored);
+  if (e) return e == -ENOMEM ? ENOMEM : EIO;
+  set_crc(c, calculated);
+  return 0;
+}
 
 static const DIPlugInInterface VTBL = {
   .QueryInterface = query_interface, .AddRef = add_ref, .Release = release,
@@ -135,6 +170,7 @@ static const DIPlugInInterface VTBL = {
   .getClassName = class_name, .copyFormatDescriptionString = copy_format_description,
   .copyImageInformation = copy_image_information, .isWriteEnabled = is_write_enabled,
   .getSectorCount = sector_count, .readSectors = read_sectors, .flush = flush,
+  .copyImageChecksum = copy_image_checksum, .calcChecksum = calc_checksum,
 };
 
 /* the one exported symbol: Info.plist's CFPlugInFactories names it */

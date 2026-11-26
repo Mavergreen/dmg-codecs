@@ -44,6 +44,7 @@ int udif_image_open(const udif_reader *r, udif_image **out) {
 }
 
 uint64_t udif_image_size(const udif_image *im) { return im->size; }
+int udif_image_has_type(const udif_image *im, uint32_t type) { return udif_table_has_type(im->t, type); }
 
 static int is_coded(uint32_t t) { return t >= 0x80000004 && t <= 0x80000008; }
 
@@ -105,6 +106,61 @@ int udif_image_read(udif_image *im, void *buf, size_t len, uint64_t off) {
     done += n;
   }
   pthread_mutex_unlock(&im->lock);
+  return e;
+}
+
+/* spec: UDIF's checksum type 2 is CRC32 */
+#define CRC32 2
+#define PIECE ((size_t)1 << 20)
+int udif_image_stored_crc32(const udif_image *im, uint32_t *stored) {
+  udif_checksums c; udif_table_checksums(im->t, &c);
+  if (c.master_type == CRC32) *stored = c.master_crc;
+  else if (c.fork_type == CRC32) *stored = c.fork_crc;
+  else return -ENOENT;
+  return 0;
+}
+
+int udif_image_crc32(udif_image *im, uint32_t *stored, uint32_t *calculated) {
+  udif_checksums c; udif_table_checksums(im->t, &c);
+  if (c.master_type != CRC32 && c.fork_type != CRC32) return -ENOENT;
+  uint8_t *buf = malloc(PIECE);
+  if (!buf) return -ENOMEM;
+  int e = 0;
+  if (c.master_type == CRC32) {
+    uLong *crc = calloc(c.nmish ? c.nmish : 1, sizeof *crc);
+    if (!crc) { free(buf); return -ENOMEM; }
+    /* platform: runs are sorted by sector, and within one blkx entry hdiutil writes them in sector order, so one
+     *           pass in sector order visits each entry's runs in its own order */
+    for (size_t i = 0; !e && i < im->n; i++) {
+      const udif_run *r = &im->runs[i];
+      if (r->type == 2) continue;
+      for (uint64_t at = r->sector * 512, end = (r->sector + r->count) * 512; !e && at < end; ) {
+        size_t len = end - at < PIECE ? (size_t)(end - at) : PIECE;
+        e = udif_image_read(im, buf, len, at);
+        if (!e) crc[r->mish] = crc32(crc[r->mish], buf, (uInt)len);
+        at += len;
+      }
+    }
+    uLong master = crc32(0, NULL, 0);
+    for (size_t i = 0; i < c.nmish; i++) {
+      /* spec: an entry without a CRC32 of its own enters the master as stored */
+      uint32_t v = c.mish_type[i] == CRC32 ? (uint32_t)crc[i] : c.mish_crc[i];
+      uint8_t w[4] = { v >> 24, v >> 16, v >> 8, v };
+      master = crc32(master, w, 4);
+    }
+    free(crc);
+    *stored = c.master_crc; *calculated = (uint32_t)master;
+  } else {
+    uint64_t dfo, dfl; udif_table_fork(im->t, &dfo, &dfl);
+    uLong f = crc32(0, NULL, 0);
+    for (uint64_t at = 0; !e && at < dfl; ) {
+      size_t len = dfl - at < PIECE ? (size_t)(dfl - at) : PIECE;
+      if (im->r.pread(im->r.ctx, buf, len, dfo + at)) e = -EIO; else f = crc32(f, buf, (uInt)len);
+      at += len;
+    }
+    *stored = c.fork_crc; *calculated = (uint32_t)f;
+  }
+  free(buf);
   return e;
 }
 
