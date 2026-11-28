@@ -31,20 +31,23 @@ jobs:
     outputs:
       version: ${{ steps.ver.outputs.ver }}
       publish: ${{ steps.ver.outputs.publish }}
+      mode: ${{ steps.ver.outputs.mode }}
     steps:
       - uses: actions/checkout@v7
         with: { fetch-depth: 0, persist-credentials: false }
       - uses: Mavergreen/shipyard/.github/actions/install@v1
       # spec: INGREDIENTS.md "Declared state" -- a push to main publishes exactly when release-needed.sh finds
-      #       no release carrying this state; shipyard SKILL.md "Versioning" -- YYYYMMDD.N, derived
+      #       no release carrying this state; INGREDIENTS.md "Versioning" -- self-upstream-date, derived once, here
       - name: Version (YYYYMMDD.N) + publish decision
         id: ver
         env:
           REPACKAGE: ${{ inputs.repackage }}
+          LOCAL_RELEASE: ${{ inputs.repackage }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -eu
-          ver="$(sh build/version.sh)"
+          mode="$(sh "$SHIPYARD_SCRIPTS/release-mode.sh")"
+          ver="$(sh "$SHIPYARD_SCRIPTS/release-version.sh" --product dmg-codecs --mode "$mode")"
           pub=no
           if [ "$GITHUB_REF" = refs/heads/main ]; then
             if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || [ "$GITHUB_EVENT_NAME" = push ]; then
@@ -58,15 +61,40 @@ jobs:
               fi
             fi
           fi
-          { echo "ver=$ver"; echo "publish=$pub"; } >> "$GITHUB_OUTPUT"
-          echo "version=$ver publish=$pub"
+          { echo "ver=$ver"; echo "publish=$pub"; echo "mode=$mode"; } >> "$GITHUB_OUTPUT"
+          echo "version=$ver publish=$pub mode=$mode"
+
+  # spec: shipyard conventions check 40c -- the derived tag is checked against the scheme, the notes and the commit
+  version-check:
+    needs: ver
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 0, persist-credentials: false }
+      - uses: Mavergreen/shipyard/.github/actions/install@v1
+      - name: Check the release version
+        id: tag
+        env:
+          LOCAL_RELEASE: ${{ inputs.repackage }}
+          PUBLISHING: ${{ needs.ver.outputs.publish }}
+        run: |
+          set -eu
+          mode="$(sh "$SHIPYARD_SCRIPTS/release-mode.sh")"
+          t="$(sh "$SHIPYARD_SCRIPTS/release-version.sh" --product dmg-codecs --mode "$mode")"
+          sh "$SHIPYARD_SCRIPTS/check-release-version.sh" --product dmg-codecs --version "$t" --sha "$GITHUB_SHA" --publishing "$PUBLISHING" --mode "$mode"
+          echo "tag=$t" >> "$GITHUB_OUTPUT"
 
   # platform: build is the PR's required check, and GitHub counts a SKIPPED required check as passing,
   #           so build runs even when ver fails, and then fails first
   # spec: build/package-pkg.sh -- clang22, the pinned SDK and stevedore build and package on Linux, so
   #       no job here needs a macOS runner
   build:
-    needs: ver
+    needs: [ver, version-check]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -177,17 +205,21 @@ jobs:
     secrets: { SPARKLE_PRIVATE_KEY: "${{ secrets.SPARKLE_PRIVATE_KEY }}" }
 
   publish:
-    needs: [ver, build, vm-test, scan]
+    needs: [ver, version-check, build, vm-test, scan]
     if: needs.ver.outputs.publish == 'yes'
     permissions: { contents: write }
     uses: Mavergreen/shipyard/.github/workflows/publish-release.yml@v1
-    with: { version: "${{ needs.ver.outputs.version }}", artifact: mavergreen-dmg-codecs }
+    with:
+      version: "${{ needs.version-check.outputs.tag }}"
+      product: dmg-codecs
+      release-mode: "${{ needs.ver.outputs.mode }}"
+      artifact: mavergreen-dmg-codecs
 
   # spec: shipyard scripts/required-checks.sh -- branch protection requires this one check per pull_request workflow
   required:
     name: required (release)
     if: always()
-    needs: [ver, build, vm-test, scan, publish]
+    needs: [ver, version-check, build, vm-test, scan, publish]
     runs-on: ubuntu-latest
     steps:
       - uses: Mavergreen/shipyard/.github/actions/required-gate@v1
