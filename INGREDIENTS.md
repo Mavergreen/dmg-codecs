@@ -36,6 +36,5 @@ through shipyard, and is signed with the organization's key (`updater/ed25519_ke
 
 ## Conformance deviations
 
-- scheme: DMG Codecs is its own upstream (no upstream release to repackage), so it versions itself by date as YYYYMMDD.N with no -mavericks.N axis; exit: when conformance's scheme check reads "## Versioning" (self-upstream-date), drop this
 - install-path:Library/Plug-ins/DiskImages/DMGCodecs.plugin*: DiskImages.framework loads CFPlugIns only from Library/Plug-ins/DiskImages; the manifest's outside lists the bundle, so uninstall removes it
 - no-standalone:dmg-codecs: the product is a DiskImages plug-in, not a tool to run from a folder: it works only installed root-owned in /Library/Plug-ins/DiskImages, where the pkg's receipt and manifest let uninstall remove it, so a tarball would only be a way to install it untracked
